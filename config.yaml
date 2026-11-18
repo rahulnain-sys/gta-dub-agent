@@ -1,0 +1,97 @@
+# GTA story-dub agent settings. Anything left out falls back to the defaults in dub_agent/config.py.
+
+# ---------------------------------------------------------------- CHARACTERS
+# enabled: false -> for EVERY video the AI picks the genre (gangster, comedy, gentleman, heist...) and invents
+# fresh characters, each voiced to match (deep gangster voice, posh gentleman, nervous sidekick...).
+# Set enabled: true and fill main_character/recurring_cast only if you ever want a fixed cast.
+series:
+  enabled: false
+  channel_name: ""
+
+# ---------------------------------------------------------------- AUTOPILOT (python -m dub_agent autopilot)
+autopilot:
+  format: both               # one long episode + shorts per run
+  episode_minutes: 12
+  shorts: 3
+  upload: true               # schedule uploads on your YouTube channel
+  max_queue_days: 2          # skip making new videos if publish slots are already booked 2 days ahead
+
+discover:
+  target_game: auto          # auto = GTA V until gta6_launch, then GTA VI (or force gta5 / gta6)
+  gta6_launch: "2026-11-19"
+  max_age_hours: 24          # your creators: prefer uploads from the last 24 h...
+  fallback_max_age_hours: 168  # ...if none, use their best uploads from the last 7 days
+  cookies_file: ""           # put cookies.txt in this folder (picked up automatically) - see README "YouTube bot check"
+  cookies_from_browser: ""   # or: firefox (logged in to YouTube)
+  trend_max_age_hours: 48    # trend radar: only videos from the last 48 h
+  min_duration_min: 6        # skips Shorts and clips
+  max_duration_min: 240
+  pick_top: 4                # hottest videos (by views per hour) used per run
+  rank_by: velocity
+  ai_check: true             # Gemini looks at each thumbnail: real gameplay? faceless? not AI/meme/vlog/news?
+  faceless_only: true
+  min_quality: 5             # 1-10 footage quality from the AI check
+  exclude_terms: []          # add your own words to reject, e.g. ["fivem", "minecraft"]
+  # each topic is searched with every spelling: "gta 5 ...", "gta v ...", "gtav ..." (GTA 6 / GTA VI / GTAVI after launch)
+  trend_topics: ["gameplay", "funny gameplay", "mission gameplay", "no commentary", "roleplay",
+                 "gameplay hindi", "mods gameplay", "online gameplay", "police chase", "free roam"]
+
+upload:
+  client_secret: client_secret.json
+  timezone: Asia/Kolkata
+  long_slots: ["19:30"]                    # long video goes public at 7:30 pm
+  short_slots: ["12:30", "16:30", "21:30"] # shorts spread across the day
+  channel_name: ""                         # used in outreach messages
+  extra_hashtags: ["#GTA6", "#GTAVI", "#GTA5", "#hindistory", "#gtahindi"]
+  disclose_ai_voices: true
+
+# ---------------------------------------------------------------- SPEED
+performance:
+  scan_workers: 2            # raise to 3-4 on a paid Gemini plan
+  tts_workers: 4
+  encoder: auto              # uses your NVIDIA/Intel/AMD GPU if available
+
+# ---------------------------------------------------------------- LONG EPISODES
+episode:
+  target_minutes: 10
+  part_seconds: 120
+  captions: true
+  caption_size: 60
+
+# ---------------------------------------------------------------- AI
+brain:
+  model: auto                        # auto = newest Gemini Flash your key can use (or write a model name)
+  planner_model: auto                # auto = newest Gemini Pro your key can use, else Flash
+  max_shorts_per_video: 6
+  chunk_minutes: 20
+  min_scene_score: 3
+  min_clip_sec: 20
+  max_clip_sec: 55
+  language: "Hinglish (Hindi + English mix, written in Roman script)"
+  humour_style: >-
+    whatever suits the footage: gangster swag with punchy dialogues, desi comedy with overreactions,
+    classy gentleman wit, filmy drama - always relatable Indian references
+
+voice:
+  engine: gemini                     # gemini | sarvam | elevenlabs | dummy
+  fallback_engine: sarvam
+  accent_hint: "natural North-Indian Hinglish accent, conversational like a real person, not a news reader"
+
+audio:
+  game_audio_volume: 0.0
+  music_volume: 0.10
+  sfx_volume: 0.6
+  loudness_lufs: -14
+
+video:
+  layout: crop                       # shorts: crop | blurfill
+  blur_facecam: true
+  extra_masks: []
+
+captions:
+  font: Arial Black
+  fonts_dir: ""
+  size: 92
+  words_per_chunk: 3
+  position_from_bottom: 560
+  show_credit: true

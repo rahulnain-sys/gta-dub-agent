@@ -1,0 +1,19 @@
+{
+ "title": "Jab GTA 6 mein mummy ka call aaye 😭",
+ "hook_text": "Mummy ka call aaya 😭",
+ "description": "Bunty ki gaadi aur mummy ka timing!",
+ "hashtags": ["#gta6", "#desicomedy"],
+ "characters": [
+  {"id": "bunty", "name": "Bunty", "gender": "male", "persona": "overconfident Delhi boy"},
+  {"id": "mummy", "name": "Mummy", "gender": "female", "persona": "strict Punjabi mom"},
+  {"id": "narrator", "name": "Narrator", "gender": "male", "persona": "cricket commentator"}
+ ],
+ "lines": [
+  {"start": 0.3, "end": 2.0, "speaker": "bunty", "text": "Aaj toh Vice City meri hai bhai!", "style": "smug, excited"},
+  {"start": 2.4, "end": 4.2, "speaker": "mummy", "text": "Bunty! Kahan mar gaya tu? Khana thanda ho raha hai!", "style": "angry shouting mom"},
+  {"start": 4.6, "end": 6.0, "speaker": "bunty", "text": "Mummy bas paanch minute, police peeche hai!", "style": "panicked, fast"},
+  {"start": 7.0, "end": 9.5, "speaker": "narrator", "text": "Aur yahan Bunty ne apni zindagi ka sabse bada galat faisla liya", "style": "dramatic commentator"},
+  {"start": 10.5, "end": 12.0, "speaker": "mummy", "text": "Chappal tayyar hai beta.", "style": "calm but scary"}
+ ],
+ "sfx": [{"at": 9.6, "name": "boing"}]
+}

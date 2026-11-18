@@ -1,0 +1,9 @@
+.env
+work/
+output/
+__pycache__/
+
+token.json
+client_secret.json
+upload_log.json
+processed_videos.json

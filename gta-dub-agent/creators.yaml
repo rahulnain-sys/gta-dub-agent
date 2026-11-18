@@ -1,0 +1,10 @@
+# Creators who gave you permission. The autopilot only takes footage from channels listed here.
+# Easiest way to add one:
+#   python -m dub_agent add-creator "https://www.youtube.com/@theirhandle" "WhatsApp 16 Nov - OK, credit + link"
+#   python -m dub_agent add-creator "https://kick.com/theirname" "Kick DM 16 Nov - OK"
+creators:
+  - name: "Example Gamer"
+    handle: "@examplegamer"
+    channel_id: "UCxxxxxxxxxxxxxxxxxxxxxx"
+    kick: ""                       # their Kick username, if they stream there too
+    permission: "WhatsApp, 16 Nov 2026 - OK to dub, credit in video + description"
