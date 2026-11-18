@@ -84,9 +84,9 @@ def target_game(cfg: dict) -> str:
     if tg in ("gta5", "gta6"):
         return tg
     try:
-        launch = dt.date.fromisoformat(str(d.get("gta6_launch", "2026-11-19")))
+        launch = dt.date.fromisoformat(str(d.get("gta6_launch", "2026-11-18")))
     except ValueError:
-        launch = dt.date(2026, 11, 19)
+        launch = dt.date(2026, 11, 18)
     return "gta6" if dt.date.today() >= launch else "gta5"
 
 
@@ -153,10 +153,38 @@ def cookie_opts() -> dict:
     import os
 
     f = (os.environ.get("DUB_COOKIES_FILE") or "").strip()
-    if f and Path(f).exists():
+    if f and Path(f).exists() and cookies_file_ok(f):
         return {"cookiefile": f}
     b = (os.environ.get("DUB_COOKIES_BROWSER") or "").strip()
     return {"cookiesfrombrowser": (b,)} if b else {}
+
+
+_COOKIE_WARNED = set()
+
+
+def cookies_file_ok(path: str) -> bool:
+    """yt-dlp needs the Netscape cookies.txt format (tab-separated lines). Anything else is ignored with a warning."""
+    try:
+        text = Path(path).read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return False
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    head_ok = bool(lines) and lines[0].lstrip().startswith(("# Netscape HTTP Cookie File", "# HTTP Cookie File"))
+    rows = [ln for ln in lines if not ln.startswith("#") or ln.startswith("#HttpOnly_")]
+    rows_ok = bool(rows) and all(len(ln.split("\t")) >= 7 for ln in rows[:20])
+    has_yt = "youtube.com" in text
+    ok = rows_ok and has_yt
+    if ok and not head_ok:
+        try:  # yt-dlp insists on the header line; add it
+            Path(path).write_text("# Netscape HTTP Cookie File\n" + text, encoding="utf-8")
+        except OSError:
+            pass
+    if not ok and path not in _COOKIE_WARNED:
+        _COOKIE_WARNED.add(path)
+        why = "no youtube.com cookies inside" if rows_ok else "wrong format (must be Netscape / cookies.txt)"
+        warn(f"cookies.txt ignored: {why}. Re-export it: extension 'Get cookies.txt LOCALLY' -> Export Format: "
+             "Netscape -> Export, on a youtube.com tab while logged in.")
+    return ok
 
 
 def using_cookies() -> bool:
@@ -181,7 +209,8 @@ def _ydl(extra: dict | None = None):
     import yt_dlp
 
     opts = {"quiet": True, "skip_download": True, "no_warnings": True, "ignoreerrors": True, "logger": _Quiet(),
-            "socket_timeout": 30, "sleep_interval_requests": 0.4}
+            "socket_timeout": 30, "sleep_interval_requests": 0.4,
+            "ignore_no_formats_error": True}       # we only need titles/dates/views here, not downloadable formats
     opts.update(cookie_opts())
     opts.update(extra or {})
     return yt_dlp.YoutubeDL(opts)

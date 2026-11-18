@@ -17,8 +17,8 @@ autopilot:
   max_queue_days: 2          # skip making new videos if publish slots are already booked 2 days ahead
 
 discover:
-  target_game: auto          # auto = GTA V until gta6_launch, then GTA VI (or force gta5 / gta6)
-  gta6_launch: "2026-11-19"
+  target_game: gta6          # GTA VI is out: gameplay of GTA 6 / GTA VI / GTAVI only
+  gta6_launch: "2026-11-18"
   max_age_hours: 24          # your creators: prefer uploads from the last 24 h...
   fallback_max_age_hours: 168  # ...if none, use their best uploads from the last 7 days
   cookies_file: ""           # put cookies.txt in this folder (picked up automatically) - see README "YouTube bot check"

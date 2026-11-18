@@ -1,9 +1,16 @@
+# secrets - never on GitHub
 .env
+cookies.txt
+token.json
+client_secret.json
+# generated / per-machine
 work/
 output/
 __pycache__/
-
-token.json
-client_secret.json
 upload_log.json
 processed_videos.json
+series_log.json
+outreach.csv
+discover_report.csv
+permissions/*.png
+permissions/*.jpg

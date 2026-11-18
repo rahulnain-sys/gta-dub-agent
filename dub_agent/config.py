@@ -52,7 +52,7 @@ DEFAULTS: dict = {
     },
     "discover": {
         "target_game": "auto",        # auto = GTA V until gta6_launch, then GTA VI | or force "gta5" / "gta6"
-        "gta6_launch": "2026-11-19",
+        "gta6_launch": "2026-11-18",
         "allow_gta5_after_launch": False,
         "max_age_hours": 24,          # your creators: prefer uploads from the last N hours...
         "fallback_max_age_hours": 168,  # ...if none, use their best uploads from the last 7 days

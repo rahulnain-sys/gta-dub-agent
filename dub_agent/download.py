@@ -28,7 +28,8 @@ def fetch(source: str, work_dir: str | Path, start: float | None = None, end: fl
 
     from .discover import cookie_opts
 
-    with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True, "noplaylist": True, **cookie_opts()}) as ydl:
+    with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True, "noplaylist": True, "ignore_no_formats_error": True,
+                           **cookie_opts()}) as ydl:
         info = ydl.extract_info(source, download=False)
     meta = meta_from_info(info, source, start)
     if precheck:
@@ -41,7 +42,8 @@ def probe(source: str) -> dict:
 
     from .discover import cookie_opts
 
-    with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True, "noplaylist": True, **cookie_opts()}) as ydl:
+    with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True, "noplaylist": True, "ignore_no_formats_error": True,
+                           **cookie_opts()}) as ydl:
         info = ydl.extract_info(source, download=False)
     return meta_from_info(info, source)
 

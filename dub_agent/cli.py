@@ -225,6 +225,16 @@ def cmd_models(a, cfg):
 
 def cmd_check(a, cfg):
     ok = True
+    import shutil as _sh
+    from . import discover as _d
+    log(f"target game: {_d.GAME_LABEL[_d.target_game(cfg)]}")
+    log(f"deno (needed by yt-dlp for YouTube): {'OK' if _sh.which('deno') else 'MISSING - winget install DenoLand.Deno --source winget'}")
+    import os as _os
+    cf = _os.environ.get("DUB_COOKIES_FILE")
+    if cf and Path(cf).exists():
+        log(f"cookies.txt: {'OK' if _d.cookies_file_ok(cf) else 'INVALID (see warning above)'}")
+    else:
+        log("cookies.txt: not found (recommended - see README 'YouTube bot check')")
     for b in ("ffmpeg", "ffprobe"):
         try:
             need_binary(b)
