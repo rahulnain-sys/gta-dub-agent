@@ -64,6 +64,7 @@ DEFAULTS: dict = {
         "min_duration_min": 6,
         "max_duration_min": 240,
         "rank_by": "velocity",        # velocity = views per hour (best for fresh uploads) | views
+        "auto_add_creators": True,    # trend-radar channels go into creators.yaml as status: pending
         "ai_check": True,             # Gemini checks thumbnail + metadata: real gameplay? faceless? not AI/meme?
         "faceless_only": True,
         "ai_check_max": 40,           # thumbnails checked by AI per list (top by views/hour)
@@ -82,6 +83,7 @@ DEFAULTS: dict = {
         "episode_minutes": 12,
         "shorts": 3,
         "upload": True,
+        "use_radar_videos": True,     # also use trend-radar videos (pending channels) in the same run
         "cooldown_seconds": 60,       # pause between searching and downloading (only when no cookies are set)
         "max_queue_days": 2,          # don't make new videos if publish slots are already booked this far ahead
     },
@@ -237,6 +239,78 @@ def load_creators(path: str | None = None) -> list[dict]:
         return []
     data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     return [c for c in data.get("creators", []) if c]
+
+
+CREATORS_HEADER = """# Creators whose gameplay the agent uses.
+#   status: approved -> videos using their footage are uploaded automatically
+#   status: pending  -> found automatically by the trend radar; videos are MADE but NOT uploaded until you approve:
+#                       python -m dub_agent approve "<channel name or URL>" "WhatsApp 19 Nov - OK, credit + link"
+# Entries without a status count as approved (they were added by hand with a permission note).
+"""
+
+
+def creator_status(c: dict | None) -> str:
+    if not c:
+        return "none"
+    return str(c.get("status") or "approved").strip().lower()
+
+
+def save_creators(creators: list[dict], path: str | None = None) -> None:
+    p = Path(path) if path else ROOT / "creators.yaml"
+    body = yaml.safe_dump({"creators": creators}, allow_unicode=True, sort_keys=False, width=200)
+    p.write_text(CREATORS_HEADER + body, encoding="utf-8")
+
+
+def _cid(c: dict) -> str:
+    import re as _re
+    m = _re.search(r"(UC[0-9A-Za-z_-]{22})", str(c.get("channel_id") or "") + " " + str(c.get("channel_url") or ""))
+    return m.group(1) if m else ""
+
+
+def add_pending_creators(found: list[dict]) -> list[dict]:
+    """Add channels the trend radar found (not yet listed) as status: pending. Returns the ones added."""
+    import datetime as _dt
+    creators = load_creators()
+    known = {_cid(c) for c in creators if _cid(c)}
+    known_urls = {_norm(c.get("channel_url")) for c in creators if c.get("channel_url")}
+    added = []
+    for f in found:
+        cid = _cid(f)
+        url = f.get("channel_url") or (f"https://www.youtube.com/channel/{cid}" if cid else "")
+        if not (cid or url) or (cid and cid in known) or (_norm(url) in known_urls):
+            continue
+        entry = {"name": f.get("channel") or f.get("name") or cid, "channel_id": cid, "channel_url": url,
+                 "status": "pending", "found": _dt.date.today().isoformat(),
+                 "found_video": (f.get("title") or "")[:100], "permission": ""}
+        entry = {k: v for k, v in entry.items() if v != "" or k == "permission"}
+        creators.append(entry)
+        added.append(entry)
+        if cid:
+            known.add(cid)
+        known_urls.add(_norm(url))
+    if added:
+        save_creators([c for c in creators if c.get("name") != "Example Gamer"])
+    return added
+
+
+def set_creator_status(query: str, status: str, note: str = "") -> dict | None:
+    import datetime as _dt
+    creators = load_creators()
+    q = _norm(query)
+    hit = None
+    for c in creators:
+        fields = [_norm(c.get(k)) for k in ("name", "handle", "channel_id", "channel_url")]
+        if q and (q in fields or any(f and (q in f or f in q) for f in fields if len(f) > 3)):
+            hit = c
+            break
+    if not hit:
+        return None
+    hit["status"] = status
+    if note:
+        hit["permission"] = note
+    hit[f"{status}_on"] = _dt.date.today().isoformat()
+    save_creators(creators)
+    return hit
 
 
 def find_creator(meta: dict, creators: list[dict]) -> dict | None:

@@ -77,14 +77,29 @@ def run(cfg: dict, dry_run: bool = False, upload: bool | None = None) -> None:
         titles, rows = discover.trend_radar(cfg)
         discover.write_outreach(rows, cfg)
         cands = discover.watchlist_candidates(cfg)
+        if ap.get("use_radar_videos", True) and rows:
+            done = discover.load_processed() | {c["id"] for c in cands}
+            from .config import creator_status as _cs, find_creator as _fc, load_creators as _lc
+            _cur = _lc()
+            extra = [r for r in rows if r["id"] not in done and _cs(_fc({"channel_id": r.get("channel_id"),
+                     "channel_url": r.get("channel_url"), "channel": r.get("channel")}, _cur)) != "rejected"]
+            if extra:
+                log(f"Adding {len(extra)} trend-radar video(s) from newly found channels to the picks")
+            cands = sorted(cands + extra, key=lambda v: v.get("velocity", 0), reverse=True)
         if not cands:
             log("No fresh GTA uploads from your creators right now. Will check again next run.")
             _log_run("no fresh videos")
             return
         picks = cands[: int(cfg["discover"]["pick_top"])]
         log(f"Picked {len(picks)} video(s):")
+        from .config import creator_status, find_creator, load_creators
+        current = load_creators()
         for p in picks:
-            log(f"   - [{p['platform']}] {p['creator']}: {p['title'][:80]} ({p['views']:,} views)")
+            st = creator_status(find_creator({"channel_id": p.get("channel_id"), "channel_url": p.get("channel_url"),
+                                              "channel": p.get("channel") or p.get("creator")}, current))
+            tag = "" if st == "approved" else "  [PENDING - made now, uploaded after you approve]"
+            log(f"   - [{p['platform']}] {p.get('creator') or p.get('channel')}: {p['title'][:70]} "
+                f"({p['views']:,} views){tag}")
         if dry_run:
             return
         if not discover.using_cookies():

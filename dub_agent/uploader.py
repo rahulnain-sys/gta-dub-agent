@@ -106,6 +106,22 @@ def _clean_tags(tags: list[str]) -> list[str]:
     return out
 
 
+def pending_creators_for(moment: dict) -> list[str]:
+    """Names of creators in this video whose status (checked NOW in creators.yaml) is not approved."""
+    from .config import creator_status, find_creator, load_creators
+
+    current = load_creators()
+    out = []
+    for c in moment.get("creators") or ([moment["creator"]] if moment.get("creator") else []):
+        if not (c.get("channel_id") or c.get("channel_url") or c.get("name")):
+            continue
+        now = find_creator({"channel_id": c.get("channel_id"), "channel_url": c.get("channel_url"),
+                            "channel": c.get("name")}, current)
+        if creator_status(now) != "approved":
+            out.append(c.get("name") or c.get("channel_url") or "?")
+    return out
+
+
 def upload_dir(vdir: Path, cfg: dict, publish_at: dt.datetime | None = None, interactive: bool = True) -> dict | None:
     """Upload the finished video in `vdir` as a private video scheduled to go public at `publish_at`."""
     from googleapiclient.errors import HttpError
@@ -118,6 +134,16 @@ def upload_dir(vdir: Path, cfg: dict, publish_at: dt.datetime | None = None, int
         return read_json(done_file)
     moment = read_json(vdir / "moment.json")
     meta = read_json(vdir / "upload.json")
+    waiting = pending_creators_for(moment)
+    if waiting:
+        names = ", ".join(waiting)
+        (vdir / "AWAITING_PERMISSION.txt").write_text(
+            f"Not uploaded yet: waiting for permission from {names}.\n"
+            f'After they say yes:  python -m dub_agent approve "{waiting[0]}" "WhatsApp <date> - OK"\n'
+            "The next autopilot run (or: python -m dub_agent upload <this folder>) uploads it.\n", encoding="utf-8")
+        log(f"Holding {vdir.name}: waiting for permission from {names}")
+        return None
+    (vdir / "AWAITING_PERMISSION.txt").unlink(missing_ok=True)
     kind = "episode" if moment.get("format") == "episode" else "short"
     video = next((p for p in vdir.glob("*.mp4") if not p.name.startswith("_")), None)
     if not video:

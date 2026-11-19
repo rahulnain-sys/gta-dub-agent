@@ -12,7 +12,7 @@ from pathlib import Path
 from . import audio as A
 from . import brain
 from .captions import build_ass
-from .config import ROOT, find_creator, load_creators
+from .config import ROOT, creator_status, find_creator, load_creators
 from .download import assemble, chunk_proxy, cut_segment, fetch, fetch_proxy, is_url, make_proxy, probe
 from .render import make_thumbnail, render_short
 from .utils import ensure_dir, has_audio, log, media_duration, read_json, run, slugify, warn, write_json
@@ -31,8 +31,13 @@ def check_permission(meta: dict, allow_unlisted: bool) -> dict:
         return {"name": "", "handle": "", "channel_url": ""}
     creator = find_creator(meta, load_creators())
     if creator:
-        log(f"Permission found for creator: {creator.get('name') or creator.get('handle')} "
-            f"({creator.get('permission', 'no note')})")
+        if creator_status(creator) == "rejected":
+            raise RuntimeError(f"{creator.get('name')} is marked rejected in creators.yaml - not using their footage")
+        if creator_status(creator) == "pending":
+            log(f"Creator {creator.get('name')} is PENDING: video will be made, upload waits for your approval.")
+        else:
+            log(f"Permission found for creator: {creator.get('name') or creator.get('handle')} "
+                f"({creator.get('permission', 'no note')})")
         return creator
     if allow_unlisted:
         warn("Channel is not in creators.yaml — continuing because --allow-unlisted was given. "

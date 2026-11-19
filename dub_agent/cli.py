@@ -201,14 +201,15 @@ def cmd_add_creator(a, cfg):
         if a.name:
             entry["name"] = a.name
     entry["permission"] = a.permission
+    entry["status"] = "approved"
     path = ROOT / "creators.yaml"
     data = (yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}) or {}
     lst = [c for c in (data.get("creators") or []) if c and c.get("name") != "Example Gamer"]
     key = entry.get("channel_id") or entry.get("kick")
     lst = [c for c in lst if (c.get("channel_id") or c.get("kick")) != key]
     lst.append({k: v for k, v in entry.items() if v})
-    data["creators"] = lst
-    path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    from .config import save_creators
+    save_creators(lst)
     log(f"Added to creators.yaml: {entry.get('name')}  ({entry.get('channel_url') or entry.get('kick')})")
 
 
@@ -221,6 +222,55 @@ def cmd_models(a, cfg):
     print("Gemini models your key can use:")
     for n in sorted(names, key=M._version, reverse=True):
         print("  ", n)
+
+
+def cmd_approve(a, cfg):
+    from .config import set_creator_status
+
+    c = set_creator_status(a.channel, "approved", a.note)
+    if not c:
+        sys.exit(f"No creator matching '{a.channel}' in creators.yaml. Run: python -m dub_agent pending")
+    log(f"Approved: {c.get('name')} ({c.get('channel_url', '')}). Their held videos upload on the next autopilot run.")
+    if a.upload_now:
+        from .config import ROOT
+        from .uploader import upload_dir
+        for d in sorted((ROOT / "output").glob("*/*")):
+            if (d / "AWAITING_PERMISSION.txt").exists():
+                upload_dir(d, cfg)
+
+
+def cmd_reject(a, cfg):
+    from .config import set_creator_status
+
+    c = set_creator_status(a.channel, "rejected", a.note or "said no")
+    if not c:
+        sys.exit(f"No creator matching '{a.channel}'.")
+    log(f"Marked rejected: {c.get('name')}. Their footage won't be used or uploaded.")
+
+
+def cmd_pending(a, cfg):
+    from .config import ROOT, creator_status, load_creators
+
+    pend = [c for c in load_creators() if creator_status(c) == "pending"]
+    held = {}
+    for d in sorted((ROOT / "output").glob("*/*")):
+        f = d / "AWAITING_PERMISSION.txt"
+        if f.exists():
+            for c in pend:
+                if c.get("name") and c["name"] in f.read_text(encoding="utf-8"):
+                    held.setdefault(c["name"], []).append(str(d))
+    if not pend:
+        print("No pending creators.")
+        return
+    me = cfg["upload"].get("channel_name") or "(your channel)"
+    print(f"{len(pend)} creator(s) waiting for your WhatsApp OK:\n")
+    for c in pend:
+        n = len(held.get(c.get("name"), []))
+        print(f"- {c.get('name')}   {c.get('channel_url', '')}   videos waiting: {n}")
+        print(f"    found via: {c.get('found_video', '')}")
+        print(f'    message: Hi {c.get("name")}! Loved your GTA gameplay. I run a Hindi story-dub channel ({me}) - '
+              "can I use some of your gameplay footage with full credit + link in every video?")
+        print(f'    approve: python -m dub_agent approve "{c.get("name")}" "WhatsApp <date> - OK"\n')
 
 
 def cmd_check(a, cfg):
@@ -321,6 +371,20 @@ def main(argv=None):
     sc.add_argument("--every", type=int, default=2)
     sc.set_defaults(func=cmd_schedule)
 
+    apv = sub.add_parser("approve", help="mark a creator approved (after their WhatsApp OK) - held videos then upload")
+    apv.add_argument("channel", help="channel name, @handle, channel ID or URL")
+    apv.add_argument("note", nargs="?", default="", help='how they agreed, e.g. "WhatsApp 19 Nov - OK"')
+    apv.add_argument("--upload-now", action="store_true", help="upload their held videos immediately")
+    apv.set_defaults(func=cmd_approve)
+
+    rj = sub.add_parser("reject", help="mark a creator who said no (their footage is never used)")
+    rj.add_argument("channel")
+    rj.add_argument("note", nargs="?", default="")
+    rj.set_defaults(func=cmd_reject)
+
+    pe = sub.add_parser("pending", help="list creators waiting for permission + their held videos")
+    pe.set_defaults(func=cmd_pending)
+
     mo = sub.add_parser("models", help="list the Gemini models your API key can use")
     mo.set_defaults(func=cmd_models)
 
@@ -335,7 +399,7 @@ def main(argv=None):
 
     a = p.parse_args(argv)
     cfg = load_config(a.config)
-    if a.cmd not in ("check", "auth", "discover", "schedule", "add-creator", "models"):
+    if a.cmd not in ("check", "auth", "discover", "schedule", "add-creator", "models", "approve", "reject", "pending"):
         need_binary("ffmpeg")
         need_binary("ffprobe")
     a.func(a, cfg)

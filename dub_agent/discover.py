@@ -23,7 +23,7 @@ from pathlib import Path
 
 import requests
 
-from .config import ROOT, find_creator, load_creators
+from .config import ROOT, creator_status, find_creator, load_creators
 from .utils import log, read_json, warn, write_json
 
 PROCESSED_FILE = ROOT / "processed_videos.json"
@@ -629,7 +629,8 @@ def _kick_recent(creator: dict, cfg: dict) -> list[dict]:
 
 def watchlist_candidates(cfg: dict) -> list[dict]:
     creators = [c for c in load_creators()
-                if c.get("name") != "Example Gamer" and "xxxx" not in str(c.get("channel_id", "")).lower()]
+                if c.get("name") != "Example Gamer" and "xxxx" not in str(c.get("channel_id", "")).lower()
+                and creator_status(c) != "rejected"]
     if not creators:
         warn("creators.yaml has no real creators yet (only the example). Add one with:\n"
              '         python -m dub_agent add-creator "CHANNEL_OR_VIDEO_URL" "how they gave permission"')
@@ -684,6 +685,14 @@ def trend_radar(cfg: dict) -> tuple[list[str], list[dict]]:
         warn(f"trend radar: all {len(pre)} detail lookups failed")
     kept = _funnel(vids, cfg, max_age, "trend_radar")
     report_youtube_errors("trend radar")
+    if d.get("auto_add_creators", True) and kept:
+        from .config import add_pending_creators
+        added = add_pending_creators(kept)
+        if added:
+            log(f"Added {len(added)} new channel(s) to creators.yaml as PENDING: "
+                + ", ".join(a["name"] for a in added[:8]) + (" ..." if len(added) > 8 else ""))
+    for v in kept:
+        v["creator"] = v.get("channel", "")
     _print(kept, 15)
     return [v["title"] for v in kept[:20]], kept
 

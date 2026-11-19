@@ -40,6 +40,18 @@ python -m dub_agent add-creator "https://kick.com/theirname" "Kick DM 16 Nov - O
 ```
 The agent looks up the channel ID itself. To grow your list, open `outreach.csv` after a run. It lists today's hottest GTA channels with a permission message ready to copy and send. Add each one with `add-creator` when they say yes.
 
+### New channels are added automatically (status: pending)
+
+Every gameplay channel the trend radar confirms gets added to `creators.yaml` as `status: pending`, and its fresh videos are used in the **same run**. Videos that use a pending channel's footage are **made but held**: each held folder gets an `AWAITING_PERMISSION.txt`. Once you approve the channel, the next autopilot run uploads them at the next free slot.
+
+```cmd
+python -m dub_agent pending                                   (who is waiting, their link, a ready WhatsApp message)
+python -m dub_agent approve "Grand Mini" "WhatsApp 19 Nov - OK"   (held videos upload on the next run)
+python -m dub_agent approve "Grand Mini" "WhatsApp 19 Nov - OK" --upload-now
+python -m dub_agent reject "Some Channel"                     (said no: never used again)
+```
+To turn this off, set `discover.auto_add_creators: false` or `autopilot.use_radar_videos: false` in `config.yaml`.
+
 ## 3. Connect your YouTube channel (one time, about 10 minutes)
 
 1. Go to https://console.cloud.google.com, create a project, then go to **APIs & Services → Library** and enable **YouTube Data API v3**.
