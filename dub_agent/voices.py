@@ -305,6 +305,47 @@ def _style_to_tag(style: str) -> str:
     return ""
 
 
+class EdgeEngine(BaseEngine):
+    """Microsoft Edge neural voices (Indian English + Hindi): free, no API key, no daily limit.
+    Less expressive than Gemini, so it is the safety net that guarantees every video gets a voiceover.
+    Voice spec: "<voice>|<pitch>" e.g. "en-IN-PrabhatNeural|-8Hz" (pitch shifts give each character its own sound)."""
+    name = "edge"
+
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        try:
+            import edge_tts  # noqa: F401
+        except ImportError as e:
+            raise RuntimeError("edge-tts not installed (pip install -r requirements.txt)") from e
+
+    def synth(self, text, voice, style, persona, out):
+        import asyncio
+
+        import edge_tts
+
+        name, _, pitch = (voice or "en-IN-PrabhatNeural").partition("|")
+        pitch = pitch or "+0Hz"
+        st = (style or "").lower()
+        rate = 6
+        if any(w in st for w in ("fast", "panic", "excited", "hurry", "angry", "shout", "hyper")):
+            rate = 18
+        elif any(w in st for w in ("slow", "lazy", "sad", "crying", "sleepy", "calm", "menacing", "deep")):
+            rate = -8
+        mp3 = Path(out).with_suffix(".edge.mp3")
+        last = None
+        for attempt in range(3):
+            try:
+                comm = edge_tts.Communicate(text, name, rate=f"{rate:+d}%", pitch=pitch)
+                asyncio.run(comm.save(str(mp3)))
+                save_wav(out, load_audio(mp3))
+                mp3.unlink(missing_ok=True)
+                return
+            except Exception as e:  # noqa: BLE001
+                last = e
+                time.sleep(2 * (attempt + 1))
+        raise RuntimeError(f"Edge TTS failed: {last}")
+
+
 class DummyEngine(BaseEngine):
     """Offline test engine: beeps with a length matching the text (no API needed)."""
     name = "dummy"
@@ -319,7 +360,16 @@ class DummyEngine(BaseEngine):
         save_wav(out, (sig * env_).astype(np.float32))
 
 
-ENGINES = {"gemini": GeminiEngine, "sarvam": SarvamEngine, "elevenlabs": ElevenLabsEngine, "dummy": DummyEngine}
+ENGINES = {"gemini": GeminiEngine, "sarvam": SarvamEngine, "elevenlabs": ElevenLabsEngine, "edge": EdgeEngine,
+           "dummy": DummyEngine}
+
+ENGINE_KEYS = {"gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"), "sarvam": ("SARVAM_API_KEY",),
+               "elevenlabs": ("ELEVENLABS_API_KEY",)}
+
+
+def engine_ready(name: str) -> bool:
+    keys = ENGINE_KEYS.get(name)
+    return True if not keys else any(env(k) for k in keys)
 
 
 def make_engine(name: str, cfg: dict) -> BaseEngine:
@@ -333,15 +383,30 @@ def make_engine(name: str, cfg: dict) -> BaseEngine:
 def synth_lines(script: dict, engine_name: str, cfg: dict, cache_dir: Path, casting: dict | None = None) -> dict:
     """Generate audio for every line. Cached by (engine, voice, text, style) so edits only redo changed lines.
     Adds `audio` (wav path) and `audio_dur` to each line, and returns the casting used."""
-    try:
-        return _synth_all(script, engine_name, cfg, cache_dir, casting)
-    except Exception as e:  # noqa: BLE001
-        fb = cfg["voice"].get("fallback_engine")
-        if not fb or fb == engine_name:
-            raise
-        warn(f"Voice engine '{engine_name}' failed ({str(e)[:150]}).")
-        warn(f"Re-voicing the whole short with fallback engine '{fb}' so every character keeps one voice.")
-        return _synth_all(script, fb, cfg, cache_dir, None)
+    v = cfg["voice"]
+    chain = [engine_name] + list(v.get("fallback_engines") or [])
+    if v.get("fallback_engine") and v["fallback_engine"] not in chain:
+        chain.insert(1, v["fallback_engine"])
+    if engine_name != "dummy" and "edge" not in chain:
+        chain.append("edge")          # free safety net: a video never ends up without a voiceover
+    seen, errors = set(), []
+    for i, name in enumerate(chain):
+        if name in seen:
+            continue
+        seen.add(name)
+        if not engine_ready(name):
+            if i == 0:
+                warn(f"Voice engine '{name}' has no API key in .env - skipping it.")
+            continue
+        try:
+            return _synth_all(script, name, cfg, cache_dir, casting if i == 0 else None)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{name}: {str(e)[:150]}")
+            nxt = next((n for n in chain[i + 1:] if n not in seen and engine_ready(n)), None)
+            warn(f"Voice engine '{name}' failed ({str(e)[:150]}).")
+            if nxt:
+                warn(f"Re-voicing the whole video with '{nxt}' so every character keeps one voice.")
+    raise RuntimeError("No voice engine worked: " + " | ".join(errors))
 
 
 def _synth_all(script: dict, engine_name: str, cfg: dict, cache_dir: Path, casting: dict | None) -> dict:

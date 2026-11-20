@@ -106,6 +106,7 @@ DEFAULTS: dict = {
     "voice": {
         "engine": "gemini",           # gemini | sarvam | elevenlabs | dummy
         "fallback_engine": "sarvam",  # used if the main engine fails / runs out of quota (needs its key)
+        "fallback_engines": ["sarvam", "edge"],  # tried in order; engines without a key are skipped; edge is free
         "accent_hint": "natural North-Indian Hinglish accent, casual and conversational like a real person, not a news reader",
         "max_speedup": 1.3,           # how much a line may be sped up to fit its slot
         "gap_between_lines": 0.08,
@@ -132,6 +133,12 @@ DEFAULTS: dict = {
             "male_voices": [],
             "female_voices": [],
             "narrator_voice": "",
+        },
+        "edge": {
+            "male_voices": ["en-IN-PrabhatNeural|+0Hz", "hi-IN-MadhurNeural|+0Hz", "en-IN-PrabhatNeural|-12Hz",
+                            "hi-IN-MadhurNeural|+12Hz", "en-IN-PrabhatNeural|+14Hz"],
+            "female_voices": ["en-IN-NeerjaNeural|+0Hz", "hi-IN-SwaraNeural|+0Hz", "en-IN-NeerjaNeural|+14Hz"],
+            "narrator_voice": "hi-IN-MadhurNeural|-6Hz",
         },
         "dummy": {"male_voices": ["m1", "m2", "m3"], "female_voices": ["f1", "f2"], "narrator_voice": "n1"},
     },
@@ -250,9 +257,18 @@ CREATORS_HEADER = """# Creators whose gameplay the agent uses.
 
 
 def creator_status(c: dict | None) -> str:
+    """approved / pending / rejected. Accepts what people naturally type: approve, ok, yes, done, true..."""
     if not c:
         return "none"
-    return str(c.get("status") or "approved").strip().lower()
+    raw = c.get("status")
+    if raw is True:
+        return "approved"
+    v = str(raw if raw is not None else "approved").strip().lower()
+    if v in ("approved", "approve", "ok", "okay", "yes", "y", "done", "allowed", "true", "permitted", "granted"):
+        return "approved"
+    if v in ("rejected", "reject", "no", "n", "denied", "false", "blocked"):
+        return "rejected"
+    return "pending"
 
 
 def save_creators(creators: list[dict], path: str | None = None) -> None:

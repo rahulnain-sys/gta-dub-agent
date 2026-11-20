@@ -72,19 +72,37 @@ def render_short(src: Path, start: float, total: float, audio: Path, ass: Path, 
     else:  # crop: cut left & right, keep the middle where the action is
         cw = _even(sh * W / H)
 
-        def _x(fx):
+        def _x(fx, cam=None):
             fx = min(max(float(fx if fx is not None else 0.5), 0.0), 1.0)
-            return int(min(max(fx * sw - cw / 2, 0), sw - cw))
+            x = int(min(max(fx * sw - cw / 2, 0), sw - cw))
+            # keep a facecam out of the vertical crop when possible: slide the window away from it
+            try:
+                cx0, cy, cwid, ch = [float(t) for t in (cam or [])]
+            except (TypeError, ValueError):
+                return x
+            if cwid <= 0 or ch <= 0 or cwid > 0.5:
+                return x
+            b0, b1 = cx0 * sw, (cx0 + cwid) * sw
+            if b1 <= x or b0 >= x + cw:
+                return x                      # already outside the crop
+            left_ok = b0 - cw >= 0            # window fully left of the cam
+            right_ok = b1 + cw <= sw          # window fully right of the cam
+            if left_ok and (not right_ok or abs((b0 - cw) - x) <= abs(b1 - x)):
+                return int(b0 - cw)
+            if right_ok:
+                return int(b1)
+            return x                          # cam too central to avoid: the blur box covers it
 
         segs = [sg for sg in (segments or []) if sg.get("focus_x") is not None]
         if len(segs) > 1:
-            expr = str(_x(segs[-1]["focus_x"]))
+            expr = str(_x(segs[-1]["focus_x"], segs[-1].get("facecam")))
             for sg in reversed(segs[:-1]):
-                expr = f"if(lt(t,{float(sg['end']):.2f}),{_x(sg['focus_x'])},{expr})"
+                expr = f"if(lt(t,{float(sg['end']):.2f}),{_x(sg['focus_x'], sg.get('facecam'))},{expr})"
             chain.append(f"[{label}]crop={cw}:{sh}:x='{expr}':y=0,scale={W}:{H},setsar=1[lay]")
         else:
             fx = segs[0]["focus_x"] if segs else focus_x
-            chain.append(f"[{label}]crop={cw}:{sh}:{_x(fx)}:0,scale={W}:{H},setsar=1[lay]")
+            cam = segs[0].get("facecam") if segs else None
+            chain.append(f"[{label}]crop={cw}:{sh}:{_x(fx, cam)}:0,scale={W}:{H},setsar=1[lay]")
 
     # 3) fps, hold last frame if the dub runs past the source, captions
     ass_arg = _filter_path(ass, out.parent)

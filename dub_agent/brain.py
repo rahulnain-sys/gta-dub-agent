@@ -240,7 +240,9 @@ For each scene:
 - funny 1-10: potential for a funny short on its own (stunt, fail, crash, awkward moment = high)
 - characters: number of clearly visible people
 - standalone: true if it could be a short by itself
-- focus_x: horizontal centre of the action 0-1; facecam: streamer webcam box [x,y,w,h] (0-1) or null
+- focus_x: horizontal centre of the main character/action 0-1 (we crop a narrow vertical strip around it)
+- facecam: IMPORTANT - if a streamer's webcam / face video / big logo overlay is visible ANYWHERE in this scene,
+  give its box [x, y, w, h] as fractions of the frame (x,y = top-left corner). We remove it. null only if none.
 - what: one line describing exactly what is visible (who, where, doing what)
 - story_use: one line on how it could fit a story (e.g. "hero leaves home for the big deal")
 {style_note}

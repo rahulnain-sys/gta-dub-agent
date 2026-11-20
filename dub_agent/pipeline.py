@@ -224,7 +224,12 @@ def run_sources(sources: list[str], cfg: dict, n_shorts: int | None = None, star
             log(f"  Short {i} [{p.get('type', 'single')}]: {p.get('concept', '')}  ({segs})")
         results += make_shorts(plans, cfg, ctx)
     pool.shutdown(wait=False)
-    log(f"\nDone. {len(results)} video(s) in: {batch}")
+    failed = sorted(p.parent.name for p in batch.glob("*/FAILED.txt"))
+    log(f"\nDone. {len(results)} finished video(s) in: {batch}")
+    for r in results:
+        log(f"   OK      {r.parent.name}/{r.name}")
+    for f in failed:
+        log(f"   FAILED  {f}  (see {f}/FAILED.txt)")
     return results
 
 
@@ -236,7 +241,8 @@ def _clip_from_segments(srcs: list[Path], segs: list[dict], folder: Path, cfg: d
         sg = segs[0]
         return srcs[int(sg.get("src", 0))], sg["start"], sg["end"], [{**sg, "start": 0.0, "end": round(sg["end"] - sg["start"], 3)}]
     log(f"Stitching {len(segs)} scenes together...")
-    clip = assemble(srcs, segs, folder / "_assembled.mp4", int(cfg["video"]["fps"]), cfg)
+    raw_dir = ensure_dir(Path(cfg["work_dir"]) / "assembled")   # raw footage never goes in the output folder
+    clip = assemble(srcs, segs, raw_dir / f"{folder.parent.name}_{folder.name}.mp4", int(cfg["video"]["fps"]), cfg)
     rel, t = [], 0.0
     for sg in segs:
         d = sg["end"] - sg["start"]
@@ -296,9 +302,22 @@ def make_shorts(plans: list[dict], cfg: dict, ctx: dict) -> list[Path]:
         write_json(sdir / "script.json", script)
         try:
             results.append(produce(sdir, cfg, ctx["engine"]))
+            (sdir / "FAILED.txt").unlink(missing_ok=True)
         except Exception as ex:  # noqa: BLE001
-            warn(f"Short {k} failed while producing: {ex}")
+            _mark_failed(sdir, ex)
+            warn(f"Short {k} FAILED: {str(ex)[:200]}")
     return results
+
+
+def _mark_failed(folder: Path, ex: Exception) -> None:
+    msg = str(ex)
+    hint = ""
+    if "voice" in msg.lower() or "tts" in msg.lower():
+        hint = ("\nThe voiceover could not be made. Add a SARVAM_API_KEY to .env, or make sure 'pip install edge-tts' "
+                "worked (free voices), then run:\n  python -m dub_agent rerender \"" + str(folder) + "\"\n")
+    (folder / "FAILED.txt").write_text(
+        "This video was NOT finished - there is no final .mp4 in this folder.\n"
+        f"Reason: {msg[:800]}\n{hint}", encoding="utf-8")
 
 
 def _with_trends(cfg: dict, ctx: dict) -> dict:
@@ -437,9 +456,12 @@ def make_episode(scenes: list[dict], cfg: dict, ctx: dict, target_min: float) ->
     write_json(edir / "moment.json", moment)
     write_json(edir / "script.json", script)
     try:
-        return [produce(edir, cfg, ctx["engine"])]
+        out = [produce(edir, cfg, ctx["engine"])]
+        (edir / "FAILED.txt").unlink(missing_ok=True)
+        return out
     except Exception as ex:  # noqa: BLE001
-        warn(f"Episode failed while producing: {ex}")
+        _mark_failed(edir, ex)
+        warn(f"Episode FAILED: {str(ex)[:200]}")
         return []
 
 
