@@ -10,6 +10,8 @@ from pathlib import Path
 
 import numpy as np
 
+_DEVANAGARI = re.compile(r"[\u0900-\u097F]")
+
 from .. import audio as A
 from ..captions import _esc, _ts, build_ass
 from ..render import _filter_path, make_thumbnail
@@ -125,13 +127,17 @@ def produce_news(vdir: Path, cfg: dict, engine: str | None = None) -> Path:
         pieces.append({"kind": "narr", "beats": cur})
     n = cfg.get("news", {})
     lines = [{"speaker": "narrator", "start": 0, "end": 0,
-              "text": " ".join(beats[j]["narration"] for j in p["beats"]),
+              "text": " ".join((beats[j].get("speak") or beats[j]["narration"]) for j in p["beats"]),
               "style": n.get("narrator_style", "energetic Hindi YouTube storyteller, fast continuous pace, "
                                                "excited and clear, no long pauses")}
              for p in pieces if p["kind"] == "narr"]
     vcfg = dict(cfg)
     vcfg["voice"] = dict(cfg["voice"])
-    for eng, v in (n.get("narrator_voices") or {}).items():
+    nv = dict(n.get("narrator_voices") or {})
+    if any(_DEVANAGARI.search(ln["text"]) for ln in lines):
+        # Hindi script -> Hindi voices read it naturally (English voices mangle "unhone" -> "unhon")
+        nv["edge"] = nv.get("edge_hindi") or "hi-IN-MadhurNeural|+0Hz"
+    for eng, v in nv.items():
         vcfg["voice"][eng] = dict(cfg["voice"].get(eng, {}), narrator_voice=v)
     tts_script = {"characters": [{"id": "narrator", "name": "Narrator", "gender": n.get("narrator_gender", "male"),
                                   "persona": "energetic Hindi YouTube news storyteller",
@@ -140,7 +146,7 @@ def produce_news(vdir: Path, cfg: dict, engine: str | None = None) -> Path:
         log(f"Narration: {len(lines)} voice take(s) for {sum(1 for b in beats if not b.get('raw'))} beats")
         engine = engine or n.get("voice_engine") or cfg["voice"]["engine"]
         synth_lines(tts_script, engine, vcfg, Path(cfg["work_dir"]) / "tts_cache",
-                    {"narrator": (n.get("narrator_voices") or {}).get(engine)} if (n.get("narrator_voices") or {}).get(engine) else None)
+                    {"narrator": nv[engine]} if nv.get(engine) else None)
 
     # ---------------- 2) timeline (beats get times from their share of words in the take)
     refs = _scene_lookup(footage)
@@ -182,9 +188,22 @@ def produce_news(vdir: Path, cfg: dict, engine: str | None = None) -> Path:
     vid_scenes = {vi: [sc for (v, sc) in refs.values() if v == vi] for vi in range(len(footage))}
     card_bg = None
     shots = []
+
+    def _covered(vi, sc):
+        it = footage[vi]
+        if it.get("sections"):
+            return any(s["start"] <= sc["start"] < s["end"] for s in it["sections"])
+        return bool(it.get("hd") or it.get("proxy"))
+
+    spare = [r for r in refs.values() if _covered(*r)]
+    spare.sort(key=lambda r: -float(r[1].get("score", 5) or 5))
+    spare_i = 0
     for j, s0, e0 in timeline:
         b = beats[j]
         ref = refs.get(str(b.get("scene")))
+        if not ref and not b.get("raw") and spare:
+            ref = spare[spare_i % len(spare)]   # no matching scene -> best unused footage, never a blank card
+            spare_i += 1
         span = e0 - s0
         k = 0
         pos = s0

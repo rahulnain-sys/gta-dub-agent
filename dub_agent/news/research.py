@@ -41,7 +41,7 @@ Return JSON only (no markdown):
                     model=mdl, contents=prompt,
                     config=types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())],
                                                        temperature=0.3))
-                data = brain._extract_json(resp.text or "")
+                data = brain.as_obj(brain._extract_json(resp.text or ""), "confirmed")
                 srcs = list(data.get("sources") or [])
                 try:
                     gm = resp.candidates[0].grounding_metadata

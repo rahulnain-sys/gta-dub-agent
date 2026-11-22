@@ -102,7 +102,7 @@ DEFAULTS: dict = {
         "stream_windows": 6,
         "auto_add_creators": True,    # footage channels -> creators.yaml as pending
         "voice_engine": "",           # empty = voice.engine (gemini); fallback chain still applies
-        "narrator_voices": {"gemini": "Sadachbia", "edge": "en-IN-PrabhatNeural|+0Hz", "sarvam": "shubh"},
+        "narrator_voices": {"gemini": "Sadachbia", "edge": "en-IN-PrabhatNeural|+0Hz", "edge_hindi": "hi-IN-MadhurNeural|+0Hz", "sarvam": "shubh"},
         "narrator_gender": "male",
         "narrator_style": "energetic Hindi YouTube storyteller, fast continuous pace, excited and clear, no long pauses",
         "speech_speed": 1.06,         # >1 = slightly faster narration; long pauses are squeezed out automatically

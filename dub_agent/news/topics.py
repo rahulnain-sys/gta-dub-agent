@@ -201,7 +201,7 @@ Return JSON only: {{"long": [{{...}}], "shorts": [{{...}}]}}
 TODAY'S HEADLINES:
 {chr(10).join(lines) if lines else "(none fetched - use what you know is trending, and say so in why_now)"}
 """
-    data = brain._generate(client, cfg, [prompt], want="pro", thinking=cfg["brain"].get("creative_thinking", "medium"))
+    data = brain.as_obj(brain._generate(client, cfg, [prompt], want="pro", thinking=cfg["brain"].get("creative_thinking", "medium")), "shorts")
     data.setdefault("long", [])
     data.setdefault("shorts", [])
     for t in data["long"] + data["shorts"]:

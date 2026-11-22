@@ -150,7 +150,8 @@ class GeminiEngine(BaseEngine):
         key = env("GEMINI_API_KEY") or env("GOOGLE_API_KEY")
         if not key:
             raise RuntimeError("GEMINI_API_KEY missing")
-        self.client = genai.Client(api_key=key)
+        from google.genai import types as _t
+        self.client = genai.Client(api_key=key, http_options=_t.HttpOptions(api_version="v1beta", timeout=180_000))
         from . import models as M
         self.models = M.candidates(self.client, "tts", list(self.vcfg["gemini"].get("models") or ["auto"]))
 
@@ -333,7 +334,7 @@ class EdgeEngine(BaseEngine):
             rate = -8
         mp3 = Path(out).with_suffix(".edge.mp3")
         last = None
-        for attempt in range(3):
+        for attempt in range(6):
             try:
                 comm = edge_tts.Communicate(text, name, rate=f"{rate:+d}%", pitch=pitch)
                 asyncio.run(comm.save(str(mp3)))
@@ -342,7 +343,9 @@ class EdgeEngine(BaseEngine):
                 return
             except Exception as e:  # noqa: BLE001
                 last = e
-                time.sleep(2 * (attempt + 1))
+                if attempt < 5:
+                    warn(f"Edge voice: network problem ({str(e)[:60]}), retrying in {5 * (attempt + 1)}s...")
+                time.sleep(5 * (attempt + 1))
         raise RuntimeError(f"Edge TTS failed: {last}")
 
 

@@ -203,6 +203,17 @@ def _generate(client, cfg: dict, contents, low_res: bool = False, model: str | N
     raise RuntimeError("All Gemini models failed: " + " | ".join(errors[-6:]) + f" | last error: {str(last_err)[:300]}")
 
 
+def as_obj(data, key: str) -> dict:
+    """Gemini sometimes answers with a bare JSON list instead of {key: [...]}. Normalise to a dict."""
+    if isinstance(data, dict):
+        return data
+    if isinstance(data, list):
+        if len(data) == 1 and isinstance(data[0], dict) and key in data[0]:
+            return data[0]
+        return {key: [x for x in data if isinstance(x, dict)]}
+    return {key: []}
+
+
 def _safe_delete(client, f) -> None:
     try:
         client.files.delete(name=f.name)
@@ -254,7 +265,7 @@ Return JSON only: {{"scenes": [{{"start": 0, "end": 0, "category": "", "score": 
         data = _generate(client, cfg, [f, prompt], low_res=True)
     finally:
         _safe_delete(client, f)
-    scenes = data.get("scenes", data if isinstance(data, list) else [])
+    scenes = as_obj(data, "scenes").get("scenes") or []
     out = []
     for sc in scenes:
         try:

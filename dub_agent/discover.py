@@ -152,14 +152,56 @@ def cookie_opts() -> dict:
     """Use your YouTube login so YouTube doesn't treat the agent as a bot."""
     import os
 
+    base = {"remote_components": ["ejs:github"], "retries": 10, "fragment_retries": 10, "extractor_retries": 3,
+            "socket_timeout": 30}
     f = (os.environ.get("DUB_COOKIES_FILE") or "").strip()
-    if f and Path(f).exists() and cookies_file_ok(f):
-        return {"cookiefile": f}
+    if f and Path(f).exists():
+        clean = clean_cookies(f)
+        if clean:
+            return {**base, "cookiefile": clean}
     b = (os.environ.get("DUB_COOKIES_BROWSER") or "").strip()
-    return {"cookiesfrombrowser": (b,)} if b else {}
+    return {**base, "cookiesfrombrowser": (b,)} if b else base
 
 
 _COOKIE_WARNED = set()
+_CLEAN_CACHE: dict = {}
+KEEP_COOKIE_DOMAINS = ("youtube.com", "google.com", "googlevideo.com", "youtu.be")
+
+
+def clean_cookies(path: str) -> str | None:
+    """Keep only valid YouTube/Google lines (exactly 7 tab-separated fields) from whatever was exported,
+    so a messy 'export all' file with other sites' broken lines still works."""
+    src = Path(path)
+    key = (str(src), src.stat().st_mtime)
+    if key in _CLEAN_CACHE:
+        return _CLEAN_CACHE[key]
+    text = src.read_text(encoding="utf-8-sig", errors="replace")
+    good = []
+    for ln in text.splitlines():
+        raw = ln.strip("\r")
+        if not raw.strip() or (raw.startswith("#") and not raw.startswith("#HttpOnly_")):
+            continue
+        parts = raw.split("\t")
+        if len(parts) != 7:
+            continue
+        dom = parts[0].replace("#HttpOnly_", "").lstrip(".").lower()
+        if not any(dom == d or dom.endswith("." + d) for d in KEEP_COOKIE_DOMAINS):
+            continue
+        if parts[1].upper() not in ("TRUE", "FALSE") or parts[3].upper() not in ("TRUE", "FALSE"):
+            continue
+        good.append(raw)
+    if not any("youtube.com" in g for g in good):
+        if str(src) not in _COOKIE_WARNED:
+            _COOKIE_WARNED.add(str(src))
+            warn("cookies.txt has no usable youtube.com cookies. Re-export it: open youtube.com (logged in) -> "
+                 "'Get cookies.txt LOCALLY' -> Export Format: Netscape -> Export (this site only).")
+        _CLEAN_CACHE[key] = None
+        return None
+    out = ROOT / "work" / "cookies_youtube.txt"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("# Netscape HTTP Cookie File\n" + "\n".join(good) + "\n", encoding="utf-8")
+    _CLEAN_CACHE[key] = str(out)
+    return str(out)
 
 
 def cookies_file_ok(path: str) -> bool:

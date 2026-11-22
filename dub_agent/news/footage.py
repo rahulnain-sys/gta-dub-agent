@@ -82,6 +82,40 @@ def search_footage(topic: dict, cfg: dict, n_pick: int, extra_urls: list[str] | 
 
 # ------------------------------------------------------------------ preview + scene log
 
+_AI_OFF = {"off": False}
+
+
+def _note_ai_error(e: Exception) -> None:
+    m = str(e)
+    if ("429" in m or "RESOURCE_EXHAUSTED" in m) and "All Gemini models failed" in m:
+        if not _AI_OFF["off"]:
+            warn("   Gemini limit reached for video scanning - using the free local scene finder for the rest of this run")
+        _AI_OFF["off"] = True
+
+
+def local_scenes(proxy, media, item: dict, dur: float) -> list[dict]:
+    """No-AI scene log: the loudest / busiest moments (or evenly spaced ones), 8 s each."""
+    from ..analysis import excitement
+    picks = []
+    try:
+        hot = excitement(proxy, media / f"{item['id']}_hot.json", dur)
+        for h in sorted(hot, key=lambda h: -h["score"]):
+            t0 = max(0.0, min(dur - 8, h["t"] - 2))
+            if all(abs(t0 - p) >= 10 for p in picks):
+                picks.append(t0)
+            if len(picks) >= 12:
+                break
+    except Exception as e:  # noqa: BLE001
+        warn(f"   local scene finder failed: {str(e)[:80]}")
+    if len(picks) < 4:
+        start, end = dur * 0.04, dur * 0.96   # skip intros/outros
+        picks += [start + (end - start) * k / 8 for k in range(8)]
+    title = item.get("title", "")
+    return [{"start": round(t, 2), "end": round(min(dur, t + 8), 2), "score": 6, "focus_x": 0.5,
+             "category": "moment", "what": f"moment from '{title[:60]}' ({item.get('channel', '')})",
+             "auto": True} for t in sorted(set(round(p, 1) for p in picks)) if t + 3 < dur]
+
+
 def prepare_and_scan(item: dict, cfg: dict, work: Path, topic: dict) -> dict:
     """Small preview download -> scene log (Gemini). Long streams: only the hottest windows are scanned."""
     from .. import brain
@@ -91,9 +125,15 @@ def prepare_and_scan(item: dict, cfg: dict, work: Path, topic: dict) -> dict:
     media = ensure_dir(work / "news_media")
     cache = media / f"{item['id']}_scenes.json"
     if cache.exists():
-        item.update(read_json(cache))
-        return item
+        cached = read_json(cache)
+        if cached.get("scenes"):
+            item.update(cached)
+            return item
     lo = fetch_proxy(item["url"], media, item["id"])
+    if not lo:
+        import time
+        time.sleep(15)          # short network/DNS drop -> one more try
+        lo = fetch_proxy(item["url"], media, item["id"])
     if not lo:
         warn(f"   could not download preview of {item['url']}")
         item["scenes"] = []
@@ -106,11 +146,14 @@ def prepare_and_scan(item: dict, cfg: dict, work: Path, topic: dict) -> dict:
             "what happens, and any on-screen text. Score = how useful the scene is for THIS story.")
     max_full = float(cfg.get("news", {}).get("scan_full_if_under_min", 25)) * 60
     scenes = []
-    if dur <= max_full:
+    if _AI_OFF["off"]:
+        pass                    # Gemini daily limit already hit this run -> local scene finder only
+    elif dur <= max_full:
         for path, off, length in chunk_proxy(proxy, media, 20 * 60):
             try:
                 scenes += brain.scan_chunk(path, off, length, cfg, [], note)
             except Exception as e:  # noqa: BLE001
+                _note_ai_error(e)
                 warn(f"   scan failed: {str(e)[:120]}")
     else:
         hot = excitement(proxy, media / f"{item['id']}_hot.json", dur)
@@ -129,8 +172,15 @@ def prepare_and_scan(item: dict, cfg: dict, work: Path, topic: dict) -> dict:
             try:
                 scenes += brain.scan_chunk(clip, s0, min(120, dur - s0), cfg, [], note)
             except Exception as e:  # noqa: BLE001
+                _note_ai_error(e)
                 warn(f"   window scan failed: {str(e)[:120]}")
+            if _AI_OFF["off"]:
+                clip.unlink(missing_ok=True)
+                break
             clip.unlink(missing_ok=True)
+    if not scenes:
+        scenes = local_scenes(proxy, media, item, dur)
+        log(f"   AI scan gave nothing - picked {len(scenes)} moment(s) from loudness/motion instead")
     scenes.sort(key=lambda s: s["start"])
     item["scenes"] = scenes
     item["proxy"] = str(proxy)

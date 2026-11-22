@@ -38,9 +38,10 @@ def make_one(topic: dict, fmt: str, tdir: Path, cfg: dict, headlines: list[dict]
     facts = read_json(tdir / "facts.json") if (tdir / "facts.json").exists() else research(topic, cfg, headlines)
     write_json(tdir / "facts.json", facts)
     # 2) footage + scene logs
-    if (tdir / "footage.json").exists():
-        items = read_json(tdir / "footage.json")
-    else:
+    items = read_json(tdir / "footage.json") if (tdir / "footage.json").exists() else []
+    if items and not any(it.get("scenes") for it in items):
+        items = [F.prepare_and_scan(it, cfg, work, topic) for it in items]   # earlier run logged nothing -> redo
+    if not items:
         n_pick = int(cfg.get("news", {}).get("videos_per_long" if fmt == "long" else "videos_per_short",
                                              3 if fmt == "long" else 2))
         items = F.search_footage(topic, cfg, n_pick, footage_urls)

@@ -80,7 +80,7 @@ BUILTIN = {
     "text": ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3-flash-preview", "gemini-flash-latest"],
     "pro": ["gemini-3.8-pro", "gemini-3.1-pro-preview", "gemini-pro-latest"],
     "lite": ["gemini-3.5-flash-lite", "gemini-flash-lite-latest"],
-    "tts": ["gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts", "gemini-3.1-flash-tts-preview"],
+    "tts": ["gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts"],
 }
 
 
