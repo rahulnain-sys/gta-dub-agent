@@ -87,6 +87,32 @@ DEFAULTS: dict = {
         "cooldown_seconds": 60,       # pause between searching and downloading (only when no cookies are set)
         "max_queue_days": 2,          # don't make new videos if publish slots are already booked this far ahead
     },
+    "news": {                         # python -m dub_agent make  (news & entertainment videos)
+        "focus": "auto",              # auto | gaming | entertainment
+        "shorts_per_day": 3,
+        "long_minutes": 10,
+        "short_seconds": 45,
+        "videos_per_long": 3,         # footage videos searched per long video
+        "videos_per_short": 2,
+        "footage_height": 720,
+        "footage_search_depth": 12,
+        "footage_min_seconds": 20,
+        "footage_max_hours": 6,
+        "scan_full_if_under_min": 25, # longer videos/streams: only the hottest windows are scanned
+        "stream_windows": 6,
+        "auto_add_creators": True,    # footage channels -> creators.yaml as pending
+        "voice_engine": "",           # empty = voice.engine (gemini); fallback chain still applies
+        "narrator_voices": {"gemini": "Sadachbia", "edge": "en-IN-PrabhatNeural|+0Hz", "sarvam": "shubh"},
+        "narrator_gender": "male",
+        "narrator_style": "energetic Hindi YouTube storyteller, fast continuous pace, excited and clear, no long pauses",
+        "speech_speed": 1.06,         # >1 = slightly faster narration; long pauses are squeezed out automatically
+        "tts_chunk_chars": 900,
+        "max_shot_seconds": 5.0,      # new shot at least this often (keeps retention high)
+        "short_layout": "crop",       # crop = fill 9:16 around the action | blurfill = whole frame on blurred bg
+        "long_captions": True,
+        "headline_max_age_hours": 48,
+        "extra_hashtags": ["#gamingnews", "#hindi", "#shorts"],
+    },
     "brain": {
         "model": "auto",              # auto = newest Flash model your key can use
         "fallback_models": [],

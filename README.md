@@ -172,3 +172,17 @@ Without cookies, the agent waits 60 seconds between searching and downloading, r
 ```cmd
 python -m dub_agent run video.mp4 --allow-unlisted --moments "10-35" --engine dummy --script examples\sample_script.json
 ```
+
+
+## News mode (v6) — one command, daily videos
+
+```
+python -m dub_agent make
+```
+Finds today's hot gaming + entertainment topics, researches facts with Google Search (Gemini free key),
+finds matching footage on YouTube, writes a Hindi script, voices it (Gemini → Edge fallback), cuts the video
+to the narration and writes `upload.txt` for manual upload.  Output: `output/<date>_daily/long_01`, `short_01..03`.
+
+Options: `--topic "..."`, `--shorts 2`, `--no-long`, `--minutes 8`, `--focus gaming|entertainment`, `--footage URL ...`, `--engine edge`.
+Fix a script: edit `script.json` in the folder, then `python -m dub_agent rerender <folder>`.
+New footage channels are added to creators.yaml as `pending`; mark `status: approved` and those videos become uploadable.

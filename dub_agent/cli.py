@@ -42,8 +42,25 @@ def cmd_run(a, cfg):
     )
 
 
+def cmd_make(a, cfg):
+    from .news.make import run
+
+    n = cfg["news"]
+    run(cfg, n_shorts=a.shorts if a.shorts is not None else int(n["shorts_per_day"]),
+        n_long=0 if a.no_long else 1, minutes=a.minutes or float(n["long_minutes"]),
+        focus=a.focus or n.get("focus", "auto"), topic=a.topic, footage_urls=a.footage, engine=a.engine)
+
+
 def cmd_rerender(a, cfg):
     from .pipeline import produce
+
+    d = Path(a.short_dir)
+    if (d / "meta.json").exists() or (d / "topic.json").exists():
+        from .news.make import make_one
+        from .utils import read_json
+        fmt = "long" if d.name.startswith("long") else "short"
+        make_one(read_json(d / "topic.json"), fmt, d, cfg, [], float(cfg["news"]["long_minutes"]), a.engine, None)
+        return
 
     if a.layout:
         cfg["video"]["layout"] = a.layout
@@ -282,7 +299,7 @@ def cmd_check(a, cfg):
     import os as _os
     cf = _os.environ.get("DUB_COOKIES_FILE")
     if cf and Path(cf).exists():
-        log(f"cookies.txt: {'OK' if _d.cookies_file_ok(cf) else 'INVALID (see warning above)'}")
+        log(f"cookies.txt: {'OK (YouTube cookies found)' if _d.clean_cookies(cf) else 'INVALID (see warning above)'}")
     else:
         log("cookies.txt: not found (recommended - see README 'YouTube bot check')")
     for b in ("ffmpeg", "ffprobe"):
@@ -340,9 +357,19 @@ def main(argv=None):
     r.add_argument("--allow-unlisted", action="store_true", help="skip creators.yaml check (only for your own footage)")
     r.set_defaults(func=cmd_run)
 
+    mk = sub.add_parser("make", help="ONE command: today's hottest topics -> finished long video + Shorts")
+    mk.add_argument("--topic", help="choose the long video's topic yourself")
+    mk.add_argument("--shorts", type=int, help="how many Shorts (default 3)")
+    mk.add_argument("--no-long", action="store_true", help="only Shorts")
+    mk.add_argument("--minutes", type=float, help="long video length (default 10)")
+    mk.add_argument("--focus", choices=["auto", "gaming", "entertainment"])
+    mk.add_argument("--footage", nargs="*", help="extra footage URLs for the long video (YouTube/Kick VODs)")
+    mk.add_argument("--engine", choices=["gemini", "sarvam", "elevenlabs", "edge", "dummy"])
+    mk.set_defaults(func=cmd_make)
+
     rr = sub.add_parser("rerender", help="re-make a short after editing its script.json")
     rr.add_argument("short_dir")
-    rr.add_argument("--engine", choices=["gemini", "sarvam", "elevenlabs", "dummy"])
+    rr.add_argument("--engine", choices=["gemini", "sarvam", "elevenlabs", "edge", "dummy"])
     rr.add_argument("--layout", choices=["crop", "blurfill"])
     rr.set_defaults(func=cmd_rerender)
 
