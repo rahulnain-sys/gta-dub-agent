@@ -29,6 +29,12 @@ def _creators(items: list[dict]) -> list[dict]:
     return out
 
 
+def _spoken_seconds(script: dict, wps: float) -> float:
+    words = sum(len(str(b.get("narration") or "").split()) for b in script.get("beats") or [])
+    raw = sum(float(b.get("raw_seconds") or 0) for b in script.get("beats") or [] if b.get("raw"))
+    return words / wps + raw
+
+
 def make_one(topic: dict, fmt: str, tdir: Path, cfg: dict, headlines: list[dict], minutes: float,
              engine: str | None, footage_urls: list[str] | None) -> Path:
     work = Path(cfg["work_dir"])
@@ -53,7 +59,21 @@ def make_one(topic: dict, fmt: str, tdir: Path, cfg: dict, headlines: list[dict]
     if (tdir / "script.json").exists():
         script = read_json(tdir / "script.json")
     else:
+        n = cfg.get("news", {})
+        target_s = minutes * 60 if fmt == "long" else float(n.get("short_seconds", 50))
+        min_s = float(n.get("long_min_seconds", 360)) if fmt == "long" else max(30.0, target_s - 15)
         script = write_script(topic, facts, items, fmt, cfg, minutes)
+        secs = _spoken_seconds(script, WPS)
+        if secs < min_s:
+            warn(f"   script is only ~{secs:.0f}s (need {min_s:.0f}s+) - asking for a fuller version")
+            script = write_script(topic, facts, items, fmt, cfg, minutes, extra=(
+                f"IMPORTANT: your previous draft was only ~{secs:.0f} seconds. This one MUST be about "
+                f"{target_s:.0f} seconds ({int(target_s * WPS)} spoken words). Add the background, the proof, "
+                f"reactions and what is confirmed vs claimed."))
+            secs = _spoken_seconds(script, WPS)
+        if secs < min_s:
+            raise RuntimeError(f"script too short ({secs:.0f}s, need {min_s:.0f}s) - not making a thin video. "
+                               f"Try again later (Gemini quota) or pick a bigger topic with --topic.")
         write_json(tdir / "script.json", script)
     # 4) HD only for the scenes the script uses
     from .editor import _scene_lookup

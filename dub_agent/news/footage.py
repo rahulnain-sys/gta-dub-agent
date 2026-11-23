@@ -33,6 +33,7 @@ def search_footage(topic: dict, cfg: dict, n_pick: int, extra_urls: list[str] | 
     with ThreadPoolExecutor(max_workers=5) as ex:
         results = list(ex.map(lambda q: D._flat(f"ytsearch{depth}:{q}", depth), queries))
     names = [_norm(x) for x in (topic.get("names") or []) if len(_norm(x)) > 2]
+    creator = _norm(topic.get("creator") or "")
     gaming = topic.get("category") == "gaming"
     min_s, max_s = float(n.get("footage_min_seconds", 20)), float(n.get("footage_max_hours", 6)) * 3600
     seen, cands = set(), []
@@ -58,6 +59,11 @@ def search_footage(topic: dict, cfg: dict, n_pick: int, extra_urls: list[str] | 
                 continue
             views = int(e.get("view_count") or 0)
             score = name_hits * 3 + (1.5 if rank < 3 else 0) + min(views, 5_000_000) / 1_000_000 - qi * 0.2
+            ch = _norm(e.get("channel") or e.get("uploader") or "")
+            if creator and len(creator) > 2 and (creator in ch or ch and ch in creator):
+                score += 8              # the creator's OWN stream/VOD: face + the real moment
+            elif creator and any(w in t for w in ("clip", "stream", "live", "vod", "highlights")):
+                score += 1.5            # clip channels re-posting the stream
             cands.append({"id": vid, "url": e.get("url") if str(e.get("url", "")).startswith("http")
                           else f"https://www.youtube.com/watch?v={vid}", "title": title,
                           "channel": e.get("channel") or e.get("uploader") or "", "channel_id": e.get("channel_id") or "",

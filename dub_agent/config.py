@@ -88,10 +88,15 @@ DEFAULTS: dict = {
         "max_queue_days": 2,          # don't make new videos if publish slots are already booked this far ahead
     },
     "news": {                         # python -m dub_agent make  (news & entertainment videos)
-        "focus": "auto",              # auto | gaming | entertainment
-        "shorts_per_day": 3,
+        "focus": "gaming",            # gaming (recommended until the channel has an audience) | entertainment | auto
+        "shorts_per_day": 4,
+        "long_enabled": False,        # long videos off until you pass --long (a too-short "long" video hurts the channel)
+        "long_min_seconds": 360,      # a long video under 6 min is not made
+        "extra_hashtags_gaming": ["#gta6", "#gamingnews", "#shorts"],
+        "extra_hashtags_entertainment": ["#bollywood", "#entertainmentnews", "#shorts"],
+        "channel_footer": "Khabar Yaha Waha Ki — roz ki gaming khabar, Hindi mein. Subscribe karo!\nInstagram: @KhabarYahaWahaKi",
         "long_minutes": 10,
-        "short_seconds": 45,
+        "short_seconds": 50,
         "videos_per_long": 3,         # footage videos searched per long video
         "videos_per_short": 2,
         "footage_height": 720,

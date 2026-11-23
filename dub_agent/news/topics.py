@@ -164,6 +164,15 @@ CHANNEL STYLE (copy this format - it is proven):
   "<A> vs <B>: The Full Timeline (What's Confirmed, What's Only Claimed)", "The Real Story Behind <X>".
   Indian angle preferred for long videos (Indian gaming community, Bollywood, Indian creators), global for Shorts.
 - Neutral and factual on controversies: separate confirmed facts from claims. Never invent facts.
+
+WHAT ACTUALLY GETS VIEWS (measured on a comparable channel, 42 Shorts):
+- 1.29M / 428K / 204K / 201K / 138K / 129K views: a NAMED CREATOR doing something surprising on stream
+  (IShowSpeed, Kai Cenat, MrBeast, Scout, Mythpat, Techno Gamerz, CarryMinati...), a FUNNY/WEIRD VISUAL players
+  found in the game (Jason as fat as possible, Bigfoot), or esports DRAMA with named players/teams.
+- 32 / 49 / 193 / 939 views: dry SPECS and stats (file size, FPS, pre-order records, viewer counts, review scores,
+  map size, price). NEVER pick these as Shorts.
+- So: every Short needs a face or a visual you can SHOW (the creator's own stream, the in-game moment).
+  If you can't picture the 1-second opening shot, don't pick the topic.
 """
 
 
@@ -183,7 +192,8 @@ def pick_topics(headlines: list[dict], cfg: dict, n_shorts: int, n_long: int, fo
     prompt = f"""
 You run content strategy for a fast-growing Hindi/Hinglish YouTube channel about gaming + entertainment news.
 From today's headlines, pick the topics with the HIGHEST viewer interest right now (trending, controversial,
-surprising, big names). Pick {n_long} long-video topic(s) and {n_shorts} Shorts topics, all different.
+surprising, big names). Pick {n_long} long-video topic(s) and {n_shorts + 3} Shorts candidates, all different,
+best first.
 Focus: {focus_rule.get(focus, focus_rule['auto'])}{manual}
 {STYLE}
 For each topic give:
@@ -191,9 +201,15 @@ For each topic give:
 - title: in the channel style (English or Hinglish, as in the examples)
 - angle: one line on the story we tell
 - hook: the first spoken line (Hinglish), must stop the scroll
+- subject: "creator" (a named streamer/YouTuber's moment), "visual" (weird/funny in-game discovery),
+  "drama" (esports/creator controversy), "reveal" (trailer/update you can show) or "spec" (stats/numbers only)
+- creator: the streamer/YouTuber whose OWN stream or video is the footage (exact channel name), or ""
+- opening_shot: the exact visual for the first second (e.g. "Speed's facecam, LIVE timer at 17 hours")
+- score: 1-10 predicted views (creator/visual moments with huge names = 8-10, specs = 1-2)
 - names: key people/games/movies (used to search footage)
-- footage_queries: 3-5 YouTube search queries that will find REAL footage of this exact moment/story
-  (stream clips, gameplay, official trailers, interviews, news clips). Specific: names + event + game.
+- footage_queries: 3-5 YouTube search queries that will find REAL footage of this exact moment/story.
+  For a creator story the FIRST query must find their own stream/VOD or clip of it
+  (e.g. "IShowSpeed GTA 6 live stream", "Kai Cenat GTA 6 stream arrest clip"). Specific: names + event + game.
 - research_query: what to search on the web to verify facts
 - why_now: why this is hot today (cite headline numbers like [12])
 Return JSON only: {{"long": [{{...}}], "shorts": [{{...}}]}}
@@ -209,7 +225,13 @@ TODAY'S HEADLINES:
         t.setdefault("footage_queries", [t.get("title", "")])
         t.setdefault("names", [])
     data["long"] = data["long"][:n_long]
-    data["shorts"] = data["shorts"][:n_shorts]
+    shorts = [t for t in data["shorts"] if str(t.get("subject", "")).lower() != "spec"] or data["shorts"]
+    shorts.sort(key=lambda t: -float(t.get("score") or 5))
+    for t in shorts:
+        cr = str(t.get("creator") or "").strip()
+        if cr and cr not in t["names"]:
+            t["names"].insert(0, cr)
+    data["shorts"] = shorts[:n_shorts]
     return data
 
 

@@ -54,9 +54,58 @@ def _squeeze_pauses(src: Path, out: Path, cfg: dict) -> None:
         run(["ffmpeg", "-y", "-v", "error", "-i", str(src), "-ar", str(SAMPLE_RATE), "-ac", "1", str(out)])
 
 
-def _layout_filter(fmt: str, sw: int, sh: int, focus_x: float, cfg: dict) -> str:
+def _even(v: float) -> int:
+    return max(2, int(round(v / 2)) * 2)
+
+
+def _cam_box(cam, sw: int, sh: int):
+    """Facecam box [x, y, w, h] (fractions) -> pixel box, or None if it looks wrong."""
+    try:
+        x, y, w, h = (float(v) for v in cam)
+    except Exception:  # noqa: BLE001
+        return None
+    if not (0.05 <= w <= 0.7 and 0.05 <= h <= 0.7 and 0 <= x <= 1 - w + 0.02 and 0 <= y <= 1 - h + 0.02):
+        return None
+    return _even(x * sw), _even(y * sh), _even(w * sw), _even(h * sh)
+
+
+def _stack_filter(sw: int, sh: int, focus_x: float, cam) -> str:
+    """Streamer layout for Shorts: the person on top, the game below (what the viral clip channels do)."""
+    W, H = 1080, 1920
+    fx = float(focus_x if focus_x is not None else 0.5)
+    box = _cam_box(cam, sw, sh) if cam else None
+    if box:
+        cx, cy, cw, ch = box
+        top_h = 760
+        top = (f"crop={min(cw, sw - cx)}:{min(ch, sh - cy)}:{cx}:{cy},"
+               f"scale={W}:{top_h}:force_original_aspect_ratio=increase,crop={W}:{top_h}")
+    else:                                   # no facecam box: show the whole stream frame (face included) on top
+        top_h = _even(W * sh / sw)
+        top = f"scale={W}:{top_h}"
+    bot_h = H - top_h
+    gw = min(sw, _even(sh * W / bot_h))
+    gx = int(min(max(fx * sw - gw / 2, 0), max(0, sw - gw)))
+    return (f"split=2[t][g];[t]{top},setsar=1[top];[g]crop={gw}:{sh}:{gx}:0,scale={W}:{bot_h},setsar=1[bot];"
+            f"[top][bot]vstack=inputs=2,setsar=1")
+
+
+def _luma(f, t: float) -> float:
+    """Average brightness (0-255) of one frame - used to never open on a black/dark frame."""
+    try:
+        import subprocess
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{max(0.0, t):.2f}", "-i", str(f), "-frames:v", "1",
+                              "-vf", "scale=32:32,format=gray", "-f", "rawvideo", "-"],
+                             capture_output=True, timeout=30).stdout
+        return float(np.frombuffer(raw, dtype=np.uint8).mean()) if raw else 128.0
+    except Exception:  # noqa: BLE001
+        return 128.0
+
+
+def _layout_filter(fmt: str, sw: int, sh: int, focus_x: float, cfg: dict, cam=None, stack: bool = False) -> str:
     W, H = (1920, 1080) if fmt == "long" else (1080, 1920)
     mode = cfg.get("news", {}).get("short_layout", "crop") if fmt == "short" else "fit"
+    if fmt == "short" and sw / sh > 1.2 and (stack or _cam_box(cam, sw, sh) if cam else stack):
+        return _stack_filter(sw, sh, focus_x, cam)
     if fmt == "short" and mode == "crop" and sw / sh > 0.7:
         cw = int(round(sh * W / H / 2)) * 2
         x = int(min(max(float(focus_x if focus_x is not None else 0.5) * sw - cw / 2, 0), max(0, sw - cw)))
@@ -108,6 +157,10 @@ def produce_news(vdir: Path, cfg: dict, engine: str | None = None) -> Path:
     beats = script["beats"]
     if not beats:
         raise RuntimeError("script has no beats")
+    topic = read_json(vdir / "topic.json") if (vdir / "topic.json").exists() else {}
+    people = [str(x).lower() for x in [topic.get("creator")] + list(topic.get("names") or []) if x and len(str(x)) > 2]
+    creator_vid = {vi for vi, it in enumerate(footage)
+                   if any(p in (str(it.get("channel", "")) + " " + str(it.get("title", ""))).lower() for p in people)}
 
     # ---------------- 1) narration: consecutive narrated beats -> chunks -> few TTS calls
     max_chars = int(cfg.get("news", {}).get("tts_chunk_chars", 900 if fmt == "long" else 2000))
@@ -224,7 +277,7 @@ def produce_news(vdir: Path, cfg: dict, engine: str | None = None) -> Path:
                 used[key] = off + d
                 loc = locate(footage[vi], st)
                 if loc and Path(loc[0]).exists():
-                    src = (loc[0], loc[1], pick.get("focus_x", 0.5))
+                    src = (loc[0], loc[1], pick.get("focus_x", 0.5), pick.get("facecam"), vi in creator_vid)
             shots.append({"beat": j, "start": pos, "dur": d, "src": src})
             pos += d
             k += 1
@@ -238,12 +291,17 @@ def produce_news(vdir: Path, cfg: dict, engine: str | None = None) -> Path:
     for si, sh in enumerate(shots):
         out = tmp / f"shot_{si:04d}.mp4"
         if sh["src"]:
-            f, lt, fx = sh["src"]
+            f, lt, fx, cam, stack = sh["src"]
             try:
                 fd = media_duration(f)
                 lt = max(0.0, min(lt, fd - sh["dur"] - 0.05))
+                if si < 2:                      # the first second decides the swipe: skip dark/black frames
+                    for _ in range(5):
+                        if _luma(f, lt + 0.2) >= 45 or lt + sh["dur"] + 1.5 > fd:
+                            break
+                        lt += 1.5
                 sw, shh = video_size(f)
-                flt = _layout_filter(fmt, sw, shh, fx, cfg)
+                flt = _layout_filter(fmt, sw, shh, fx, cfg, cam=cam, stack=stack)
                 run(["ffmpeg", "-y", "-v", "error", "-ss", f"{lt:.3f}", "-i", str(f), "-t", f"{sh['dur']:.3f}", "-an",
                      "-filter_complex", f"[0:v]{flt},fps={FPS},format=yuv420p[v]", "-map", "[v]", *venc, str(out)])
                 seg_files.append(out)
@@ -304,6 +362,8 @@ def produce_news(vdir: Path, cfg: dict, engine: str | None = None) -> Path:
                  for j, s0, e0 in timeline if beats[j]["narration"]]
     creators = meta.get("creators") or []
     credit = ("Clips: " + ", ".join(c.get("name", "") for c in creators[:3] if c.get("name"))) if creators else ""
+    if fmt == "short":   # title bar on the seam between face (top) and game (bottom), never over the face
+        pc["captions"]["title_margin"] = int(cfg.get("news", {}).get("short_title_margin", 640))
     ass = build_ass({"characters": [{"id": "narrator"}], "lines": cap_lines,
                      "hook_text": "".join(ch for ch in script.get("title", "") if ord(ch) < 0x2000).strip() if fmt == "short" else ""},
                     total, pc, vdir / "captions.ass", credit)
@@ -343,13 +403,27 @@ def produce_news(vdir: Path, cfg: dict, engine: str | None = None) -> Path:
 
 def write_pack(vdir: Path, script: dict, facts: dict, meta: dict, timeline, total: float, fmt: str, cfg: dict) -> None:
     beats = script["beats"]
-    tags = []
-    for t in list(script.get("hashtags") or []) + list(cfg.get("news", {}).get("extra_hashtags", [])):
+    n = cfg.get("news", {})
+    cat = "Entertainment" if str(script.get("category", "gaming")).lower().startswith("ent") else "Gaming"
+    extra = n.get("extra_hashtags_entertainment" if cat == "Entertainment" else "extra_hashtags_gaming") \
+        or n.get("extra_hashtags", [])
+    tags = []                                   # hashtags (3-5 in the description)
+    for t in list(script.get("hashtags") or [])[:4] + list(extra):
         t = "#" + str(t).lstrip("#").replace(" ", "")
         if fmt == "long" and t.lower() == "#shorts":
             continue
+        if cat == "Entertainment" and t.lower() in ("#gamingnews", "#gaming", "#gta6"):
+            continue
         if t.lower() not in [x.lower() for x in tags]:
             tags.append(t)
+    tags = tags[:6]
+    kw = []                                     # YouTube tags field: specific search phrases
+    for t in list(script.get("tags") or []):
+        t = str(t).strip().replace("#", "")[:60]
+        if t and t.lower() not in [x.lower() for x in kw]:
+            kw.append(t)
+    while sum(len(x) + 1 for x in kw) > 480:
+        kw.pop()
     chapters = ""
     if fmt == "long":
         rows, last = [], None
@@ -376,17 +450,23 @@ def write_pack(vdir: Path, script: dict, facts: dict, meta: dict, timeline, tota
         parts += ["Sources:", srcs, ""]
     if credits:
         parts += ["Footage credits:", credits, ""]
-    parts += ["Voice-over is AI-generated. Facts checked against the sources above.", "", " ".join(tags)]
+    parts += ["Voice-over is AI-generated. Facts checked against the sources above."]
+    footer = str(n.get("channel_footer") or "").strip()
+    if footer:
+        parts += ["", footer]
+    parts += ["", " ".join(tags)]
     desc = "\n".join(parts)
     title = script.get("title", "")[:95]
     ig = "\n".join([title, "", script.get("description", ""), "",
                     ("Credits: " + ", ".join(c.get("name", "") for c in meta.get("creators") or [])) if meta.get("creators") else "",
                     "", " ".join(tags[:15])])
     (vdir / "upload.txt").write_text(
-        f"=== YOUTUBE ({'LONG VIDEO' if fmt == 'long' else 'SHORT'}) ===\nTITLE:\n{title}\n\nDESCRIPTION:\n{desc}\n\n"
-        f"TAGS:\n{', '.join(t.lstrip('#') for t in tags)}\n\n=== INSTAGRAM REELS ===\n{ig}\n\n"
+        f"=== YOUTUBE ({'LONG VIDEO' if fmt == 'long' else 'SHORT'}) ===\nTITLE:\n{title}\n\nCATEGORY: {cat}\n\n"
+        f"DESCRIPTION (paste into an EMPTY box - story must be the first line):\n{desc}\n\n"
+        f"TAGS (paste into Show more -> Tags):\n{', '.join(kw)}\n\n=== INSTAGRAM REELS ===\n{ig}\n\n"
         f"=== CHECK BEFORE POSTING ===\n[ ] Watched the whole video  [ ] Facts match the sources  "
         f"[ ] Footage channels approved in creators.yaml\nLength: {total:.0f}s\n", encoding="utf-8")
-    write_json(vdir / "upload.json", {"title": title, "description": desc, "tags": tags, "duration": total})
+    write_json(vdir / "upload.json", {"title": title, "description": desc, "tags": kw, "hashtags": tags,
+                                      "category": cat, "duration": total})
     write_json(vdir / "moment.json", {"format": "episode" if fmt == "long" else "short",
                                       "creators": meta.get("creators") or [], "concept": script.get("description", "")})

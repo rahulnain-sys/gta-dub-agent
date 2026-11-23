@@ -47,7 +47,7 @@ def cmd_make(a, cfg):
 
     n = cfg["news"]
     run(cfg, n_shorts=a.shorts if a.shorts is not None else int(n["shorts_per_day"]),
-        n_long=0 if a.no_long else 1, minutes=a.minutes or float(n["long_minutes"]),
+        n_long=1 if (a.long or (n.get("long_enabled") and not a.no_long)) else 0, minutes=a.minutes or float(n["long_minutes"]),
         focus=a.focus or n.get("focus", "auto"), topic=a.topic, footage_urls=a.footage, engine=a.engine)
 
 
@@ -359,8 +359,9 @@ def main(argv=None):
 
     mk = sub.add_parser("make", help="ONE command: today's hottest topics -> finished long video + Shorts")
     mk.add_argument("--topic", help="choose the long video's topic yourself")
-    mk.add_argument("--shorts", type=int, help="how many Shorts (default 3)")
+    mk.add_argument("--shorts", type=int, help="how many Shorts (default 4)")
     mk.add_argument("--no-long", action="store_true", help="only Shorts")
+    mk.add_argument("--long", action="store_true", help="also make the long video (off by default)")
     mk.add_argument("--minutes", type=float, help="long video length (default 10)")
     mk.add_argument("--focus", choices=["auto", "gaming", "entertainment"])
     mk.add_argument("--footage", nargs="*", help="extra footage URLs for the long video (YouTube/Kick VODs)")

@@ -20,15 +20,24 @@ def scene_catalog(footage: list[dict], max_per_video: int = 40) -> str:
     return "\n".join(rows) or "(no footage scenes available - use cards)"
 
 
-def write_script(topic: dict, facts: dict, footage: list[dict], fmt: str, cfg: dict, minutes: float = 10) -> dict:
+def write_script(topic: dict, facts: dict, footage: list[dict], fmt: str, cfg: dict, minutes: float = 10,
+                 extra: str = "") -> dict:
     from .. import brain
 
     n = cfg.get("news", {})
     client = brain._client()
     if fmt == "short":
-        secs = float(n.get("short_seconds", 45))
-        length = (f"A YouTube SHORT of about {secs:.0f} seconds = about {int(secs * WPS)} spoken words in total. "
-                  "Beat 1 is the hook (max 2 seconds, max 8 words). End with a punchy last line or question.")
+        secs = float(n.get("short_seconds", 50))
+        length = (f"A YouTube SHORT of {secs - 8:.0f}-{secs + 8:.0f} seconds = {int((secs - 8) * WPS)}-{int((secs + 8) * WPS)} "
+                  "spoken words in total (NOT less - a 25-second Short is too thin). Story arc in 5-8 beats:\n"
+                  "  1) HOOK (max 2 s, max 8 words) naming the person/thing + the shock\n"
+                  "  2) SETUP: what was expected / what they said before\n"
+                  "  3) PROOF: what actually happened, with the number/time/quote (show it on screen)\n"
+                  "  4) TWIST: the detail nobody expected\n"
+                  "  5) QUESTION to the viewer for comments.\n"
+                  "Beat 1's scene must be the strongest visual (the creator's face/stream or the in-game moment), "
+                  "never a logo, a dark frame or a generic trailer shot. Use \"card\" for time jumps and numbers "
+                  "the viewer should see (e.g. \"17 HOURS LATER\", \"₹25 LAKH/MONTH?\").")
     else:
         length = (f"A LONG video of about {minutes:.0f} minutes = about {int(minutes * 60 * WPS)} spoken words in total, "
                   "in 4-7 chapters. The first 30-50 seconds are a COLD OPEN that teases the most shocking part and "
@@ -45,7 +54,7 @@ def write_script(topic: dict, facts: dict, footage: list[dict], fmt: str, cfg: d
                                                      for t in facts.get("timeline", [])[:15]),
                            "NUMBERS: " + "; ".join(facts.get("numbers", [])[:8]),
                            "PEOPLE: " + "; ".join(facts.get("people", [])[:10])])
-    prompt = f"""
+    prompt = (extra + "\n" if extra else "") + f"""
 You are the head writer + video editor of a top Hindi/Hinglish YouTube channel (gaming + entertainment news).
 Write the narration for ONE video and choose the footage for every beat.
 {STYLE}
@@ -77,8 +86,10 @@ WRITING RULES:
 - Facts only from the research. No slurs, no insults, neutral on controversies.
 
 Return JSON only:
-{{"title": "...", "thumbnail_text": "2-4 words", "description": "2-4 lines in Hinglish",
-  "hashtags": ["#..."], "beats": [{{"chapter": "Chapter name (long only)", "narration": "...", "speak": "देवनागरी में वही लाइन",
+{{"title": "...", "thumbnail_text": "2-4 words",
+  "description": "the FULL story retold in 3-5 short English paragraphs with the real names, numbers, times and quotes (this is what search reads), then one question line for comments",
+  "tags": ["12-15 specific search phrases people type, e.g. 'IShowSpeed GTA 6', 'Speed name in GTA 6', 'GTA 6 marathon stream' - names + game + event, no generic words"],
+  "hashtags": ["3-5 hashtags"], "beats": [{{"chapter": "Chapter name (long only)", "narration": "...", "speak": "देवनागरी में वही लाइन",
   "scene": "v1#3", "raw": false, "raw_seconds": 0, "card": null}}]}}
 """
     data = brain.as_obj(brain._generate(client, cfg, [prompt], thinking=cfg["brain"].get("creative_thinking", "medium")), "beats")
@@ -97,5 +108,6 @@ Return JSON only:
     data.setdefault("thumbnail_text", "")
     data.setdefault("description", topic.get("angle", ""))
     data.setdefault("hashtags", [])
+    data["tags"] = [str(t).strip().lstrip("#") for t in (data.get("tags") or []) if str(t).strip()][:15]
     data["category"] = topic.get("category", "gaming")
     return data
